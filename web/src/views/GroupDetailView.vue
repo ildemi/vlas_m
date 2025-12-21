@@ -503,7 +503,7 @@ const updateGroupStatus = async () => {
 // Start the update interval when there are pending or processing audios
 const startUpdateInterval = () => {
   if (hasPendingOrProcessingAudios.value && !updateInterval.value) {
-    updateInterval.value = setInterval(updateGroupStatus, 10000) // Update every 10 seconds
+    updateInterval.value = setInterval(updateGroupStatus, 2000) // Update every 2 seconds
   }
 }
 

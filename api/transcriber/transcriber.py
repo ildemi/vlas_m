@@ -3,6 +3,8 @@ import os
 import torch
 from django.conf import settings
 from .normalize import filterAndNormalize
+from .airport_prompts import get_prompt_for_airport
+from .normalization_rules import apply_normalization_rules
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,14 +18,15 @@ ALLOWED_EXTENSIONS = [
 ]
 
 # Prompt inicial para condicionar al modelo (Context Priming)
+# Prompt optimizado (Context Priming) - Max densidad de info, min relleno.
+# Objetivo: Forzar contexto ATC Español/Inglés y corregir fonética común.
 INITIAL_PROMPT = (
-    "Transcripción de comunicaciones de control de tráfico aéreo (ATC) en español con terminología en inglés. "
-    "Alfabeto ICAO: Alfa, Bravo, Charlie, Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike, "
-    "November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor, Whiskey, X-ray, Yankee, Zulu. "
-    "Indicativos y Escuelas: Cuatro Vientos, Aerotec, European Flyers, Air Europa, Iberia, Vueling, Ryanair, "
-    "Enaire, Cessna, Piper, EC- (Eco Charlie). "
-    "Terminología: Rodaje, rodando, pista 27, pista 09, viento, nudos, grados, QNH, autorizado, despegue, "
-    "aterrizaje, frustrada, punto de espera, notifique, frecuencia, transpondedor, mil."
+    "ATC Communications. Español/English mix. "
+    "ICAO: Alfa Bravo Charlie Delta Echo Foxtrot Golf Hotel India Juliett Kilo Lima Mike November Oscar Papa Quebec Romeo Sierra Tango Uniform Victor Whiskey X-ray Yankee Zulu. "
+    "Numbers: Uno Dos Tres Cuatro Cinco Seis Siete Ocho Nueve Diez Mil. "
+    "Terms: Rodaje Pista Viento Nudos Grados QNH Autorizado Despegue Aterrizaje Frustrada Notifique Transpondedor Nivel Vuelo Ruta Directo. "
+    "Callsigns: Iberia Vueling AirEuropa Ryanair Enaire Cessna Piper Swiftair Binter AirNostrum. "
+    "Loc: Madrid Barajas LEMD Cuatro Vientos LECU Torrejon LETO Barcelona LEBL."
 )
 
 # FIX CRÍTICO: Asegurar que CTranslate2 encuentre las librerías de NVIDIA
@@ -122,7 +125,7 @@ class TranscriptionAgent:
                  logger.critical(f'CRITICAL: Final fallback failed: {e2}')
                  raise e2
 
-    def invoke(self, audio_path: str, normalize: bool = True, language: str = None):
+    def invoke(self, audio_path: str, normalize: bool = True, language: str = None, airport_id: str = None):
         """
         Transcribe un archivo de audio.
 
@@ -130,6 +133,7 @@ class TranscriptionAgent:
             audio_path (str): Ruta absoluta al archivo de audio.
             normalize (bool): Si True, aplica normalización post-transcripción (limpieza de texto).
             language (str, optional): 'es', 'en' o None para auto-detección.
+            airport_id (str, optional): Código ICAO del aeropuerto (ej: 'LECU') para cargar prompt específico.
 
         Returns:
             str: Texto transcrito.
@@ -148,7 +152,11 @@ class TranscriptionAgent:
             # Transcribir
             # Configuración temporal: Forzar español si no se especifica
             target_lang = language if language else 'es'
+            
+            # Obtener prompt específico
+            current_prompt = get_prompt_for_airport(airport_id)
             logger.info(f"Transcribing with language: {target_lang} (Beam=15, Float16)")
+            logger.info(f"Using AIRPORT PROMPT for: {airport_id or 'DEFAULT'}")
 
             segments, info = self.model.transcribe(
                 audio_path, 
@@ -156,7 +164,7 @@ class TranscriptionAgent:
                 language=target_lang,
                 vad_filter=True, # Voice Activity Detection para saltar silencios
                 vad_parameters=dict(min_silence_duration_ms=500),
-                initial_prompt=INITIAL_PROMPT
+                initial_prompt=current_prompt
             )
 
             logger.debug(f'Detected language: {info.language} with probability {info.language_probability}')
@@ -165,13 +173,17 @@ class TranscriptionAgent:
             full_text = []
             for segment in segments:
                 full_text.append(segment.text)
-            
+
             # Unir todo el texto
             transcription = ' '.join(full_text).strip()
 
-            # Normalización opcional (limpieza de artefactos)
+            # Normalización Determinista (Capa 2)
             if normalize:
+                # 1. Limpieza básica de alucinaciones (existente)
                 transcription = filterAndNormalize(transcription)
+                
+                # 2. Reglas Contextuales (Nuevo)
+                transcription = apply_normalization_rules(transcription, airport_code=airport_id)
 
             logger.info('Transcription completed.')
             return transcription
@@ -205,5 +217,8 @@ def is_model_loaded():
 class LazyTranscriberProxy:
     def invoke(self, *args, **kwargs):
         return get_transcriber_instance().invoke(*args, **kwargs)
+
+    def is_loaded(self):
+        return get_transcriber_instance().is_loaded()
 
 transcriber_instance = LazyTranscriberProxy()

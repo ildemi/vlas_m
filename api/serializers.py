@@ -5,7 +5,7 @@ from api.models import TranscriptionGroup, AudioTranscription, SpeechSegment
 class TranscriptionGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = TranscriptionGroup
-        fields = ['id', 'status', 'creation_date', 'completion_date', 'user', 'group_name', 'validation_status', 'validation_date', 'validation_result', 'validation_score', 'validation_calification', 'validation_comment']
+        fields = ['id', 'status', 'creation_date', 'completion_date', 'user', 'group_name', 'validation_status', 'validation_date', 'validation_result', 'validation_score', 'validation_calification', 'validation_comment', 'airport_code']
 
 class SpeechSegmentSerializer(serializers.ModelSerializer):
     segment_file_url = serializers.SerializerMethodField()

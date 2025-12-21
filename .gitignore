@@ -34,7 +34,7 @@ static/
 *.mp3
 *.wav
 *.mp4
-*.pdf
+
 # (Opcional: si queremos subir el código pero no los datos de prueba masivos)
 
 # VLAS specific

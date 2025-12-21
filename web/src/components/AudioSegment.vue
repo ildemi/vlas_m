@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { AudioSegment } from '@/types';
 import axios from 'axios';
 import { useToast } from 'vue-toastification';
@@ -50,6 +50,21 @@ const emit = defineEmits(['segmentDeleted', 'segmentUpdated']);
 
 const localSegment = ref<AudioSegment>({ ...props.segment });
 const originalSegment = ref<AudioSegment>({ ...props.segment });
+
+// Watch for changes from parent (e.g. after a Retry transcription)
+watch(() => props.segment, (newVal) => {
+  // Only update if the server data is actually different from what we last synced (originalSegment)
+  // This prevents overwriting user edits during periodic polling if the server data hasn't changed.
+  // But strictly, if we retry, server data changes.
+  const serverTextChanged = newVal.modified_text !== originalSegment.value.modified_text;
+  const serverRawTextChanged = newVal.text !== originalSegment.value.text; // Also watch raw text
+  const idChanged = newVal.id !== originalSegment.value.id; // ¡CRUCIAL! Si el ID cambia, es OTRO segmento.
+  
+  if (serverTextChanged || serverRawTextChanged || idChanged) {
+      localSegment.value = { ...newVal };
+      originalSegment.value = { ...newVal };
+  }
+}, { deep: true });
 
 const hasChanges = computed(() =>
   localSegment.value.modified_text !== originalSegment.value.modified_text ||

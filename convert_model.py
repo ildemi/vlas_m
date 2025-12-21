@@ -3,7 +3,10 @@ import ctranslate2
 
 # Nombre del modelo en HuggingFace
 model_name = "jlvdoorn/whisper-large-v3-atco2-asr"
+# OLD (Failed test): model_name = "jacktol/whisper-large-v3-finetuned-for-ATC"
+
 # Directorio donde guardaremos el modelo convertido compatible con Faster-Whisper
+# Esta ruta debe coincidir con la que usa TranscriptionAgent en transcriber.py
 output_dir = "/app/.cache/faster_whisper_converted"
 
 print(f"--- Starting Manual Conversion ---")
@@ -30,6 +33,11 @@ try:
     )
     
     print("\n✅ Conversion SUCCESSFUL!")
+    
+    # Escribir fichero de versión para trazabilidad
+    with open(os.path.join(output_dir, "version.txt"), "w") as vfile:
+        vfile.write(f"Model: {model_name}\nConverted: yes\nQuantization: float16")
+    
     print(f"Verifying files in {output_dir}:")
     files = os.listdir(output_dir)
     for f in files:

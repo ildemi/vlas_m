@@ -138,12 +138,14 @@ def is_allowed_file(filename):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_transcription_group(request):   
+    # [PASO 1] Recepción: Recibimos datos y archivos del usuario
     data = request.data
     data['user'] = request.user.id
 
     audios = request.FILES.getlist('file')
     media_root = Path(settings.MEDIA_ROOT)
-
+    
+    # Validaciones de seguridad (tamaño, extensión)
     if len(audios) > MAX_FILES:
         return Response({"error": f"Too many files. Maximum allowed is {MAX_FILES}."}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -153,69 +155,87 @@ def create_transcription_group(request):
         if audio.size > MAX_FILE_SIZE:
             return Response({"error": f"File too large: {audio.name}"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # [PASO 2] Creación del GRUPO (Contenedor padre)
     group_serializer = TranscriptionGroupSerializer(data=data)
 
     try:
+        # Inicializamos el Diarizador (Pyannote) aquí mismo en el Hilo Principal (Síncrono)
+        # NOTA: Esto podría moverse al worker en el futuro para no bloquear la respuesta HTTP
         diarizer = AudioDiarization()
+        
         if group_serializer.is_valid():
-            group = group_serializer.save()     
+            group = group_serializer.save() # Guarda el grupo en DB
             created_audios = []
 
+            # Ordenamos audios por timestamp si el nombre lo permite
             audios = sorted(audios, key=lambda audio: extract_timestamp_from_filename(audio.name))
+            
+            # [PASO 3] Procesamiento de cada Audio individual
             for idx, audio in enumerate(audios, start=1):
                 audio_data = {
                     'file': audio,
                     'file_name': audio.name,
-                    'status': 'pending',
+                    'status': 'pending', # <--- AQUÍ NACE EL "PENDING"
                     'transcription_group': group.id,
                     'order': idx,
                 }
                 audio_serializer = AudioTranscriptionSerializer(data=audio_data)
+                
                 if audio_serializer.is_valid():
-                    audio_instance = audio_serializer.save()
+                    # 3.1 Guardamos el archivo físico en disco y el registro en DB
+                    audio_instance = audio_serializer.save() 
                     created_audios.append(audio_instance)
 
-                    # Ejecutamos el diarizador sobre el archivo guardado
+                    # [PASO 4] Diarización (¿Quién habla?)
+                    # Esto ocurre AQUI y AHORA, antes de responder al usuario.
+                    # El usuario está esperando con el relojito dando vueltas.
                     audio_path = audio_instance.file.path
                     diarized_segments = diarizer.invoke(audio_path)
 
+                    # [PASO 5] Creación de Segmentos
+                    # Convertimos lo que dijo el diarizador en registros vacíos en la DB
                     for idx, seg in enumerate(diarized_segments, start=1):
                         abs_path = Path(seg['path'])
-                        # Obtenemos la ruta relativa a MEDIA_ROOT para FileField
                         relative_path = abs_path.relative_to(media_root)
 
-                        # Abrimos el archivo para pasarlo al FileField
                         with open(abs_path, 'rb') as f:
                             segment = SpeechSegment(
                                 audio=audio_instance,
-                                speaker_type='',
-                                text=None,
+                                speaker_type='', # Aun no sabemos quien es quien
+                                text=None,       # Aun no hay texto (Whisper no ha corrido)
                                 start_time=seg['start_time'],
                                 end_time=seg['end_time'],
                                 order=idx,
                             )
                             segment.segment_file.name = str(relative_path)
-                            segment.save()
+                            segment.save() # Guardamos segmento vacío
 
                 else:
-                    # Si error, limpiar todo lo creado
+                    # Rollback manual si algo falla
                     for created_audio in created_audios:
                         created_audio.delete()
                     group.delete()
                     return Response(audio_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            # Lanzar tareas para transcribir cada audio completo o cada segmento
+            # [PASO 6] Delegación Asíncrona (El Pase al Worker)
+            # Aquí es donde le decimos a Celery: "Toma el relevo, yo ya acabé".
             try:
                 for audio_instance in created_audios:
+                    # .delay() es la magia que envía el mensaje a RabbitMQ
                     task = process_audio_task.delay(audio_instance.id)
+                    
+                    # Guardamos el ID del ticket para poder preguntar luego
                     audio_instance.task_id = task.id
                     audio_instance.save()
             except Exception as e:
+                # Manejo de errores catastrófico
                 for created_audio in created_audios:
                     created_audio.delete()
                 group.delete()
                 return Response({"error": "Error al iniciar el procesamiento de audio"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
+            # [PASO 7] Respuesta al Usuario
+            # "Todo OK, aquí tienes tus IDs, ya estamos trabajando en ello"
             return Response(group_serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(group_serializer.errors, status=status.HTTP_400_BAD_REQUEST)

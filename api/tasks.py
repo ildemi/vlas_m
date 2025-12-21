@@ -13,8 +13,17 @@ logger = logging.getLogger(__name__)
 @shared_task
 def process_audio_task(audio_file_id):
     try:
-        with transaction.atomic():
-            audio_file = AudioTranscription.objects.select_for_update().get(id=audio_file_id)
+
+        # Retry logic: Wait for DB commit visibility if called immediately after view
+        for i in range(3):
+            try:
+                with transaction.atomic():
+                    audio_file = AudioTranscription.objects.select_for_update().get(id=audio_file_id)
+                    break 
+            except AudioTranscription.DoesNotExist:
+                if i == 2: raise # Final attempt failed
+                import time; time.sleep(1) # Wait 1s and retry
+
             
             if audio_file.status == 'cancelled':
                 print(f"Transcripción {audio_file_id} está cancelada, no se procesará.")
@@ -36,19 +45,46 @@ def process_audio_task(audio_file_id):
         # Obtenemos todos los segmentos ordenados por orden
         segments = SpeechSegment.objects.filter(audio=audio_file).order_by('order')
         
+        from .transcriber.semantic_sanitizer import get_sanitizer
+        sanitizer = get_sanitizer()
+        context_window = [] # Lista de strings para dar contexto al LLM
+
         # Transcribir segmento a segmento
         for segment in segments:
             seg_file_path = segment.segment_file.path
             if not os.path.exists(seg_file_path):
                 raise FileNotFoundError(f"No se encontró el archivo de segmento: {seg_file_path}")
             
-            # Aquí llamas a la función real que transcribe el segmento (debes implementar esta función)
-            text = transcriber_instance.invoke(audio_path=seg_file_path, normalize=True)
+            # Obtener airport_code del grupo
+            airport_code = audio_file.transcription_group.airport_code if audio_file.transcription_group else None
             
+            # 1. Capa 1 & 2: Whisper + Regex
+            text = transcriber_instance.invoke(audio_path=seg_file_path, normalize=True, airport_id=airport_code)
+            
+            # Filtro de Segmentos Vacíos o Muy Cortos (Noise Gate)
+            if not text or len(text.strip()) < 2:
+                logger.info(f"Skipping empty/short transcription for segment {segment.id}")
+                segment.delete() # Eliminar el segmento fantasma
+                continue
+
+            # 2. Capa 3: Semantic Sanitizer (LLM)
+            # Pasamos las últimas 3 frases como contexto
+            sanitized = sanitizer.invoke(text=text, context_window=context_window[-3:])
+            
+            refined_text = sanitized.get('refined_text', text)
+            speaker = sanitized.get('speaker', 'OTHER').lower() # DB usa lowercase
+
+            logger.info(f"Segment {segment.id}: Text='{refined_text}', Speaker='{speaker}'")
+
+            # Actualizar contexto
+            context_window.append(f"{speaker.upper()}: {refined_text}")
+
             # Guardamos texto en el segmento
-            segment.text = text
+            segment.text = refined_text
+            segment.speaker_type = speaker # Guardamos el rol detectado
+            
             if not segment.modified_text:
-                segment.modified_text = text
+                segment.modified_text = refined_text
             segment.save()
         
         with transaction.atomic():
@@ -64,6 +100,9 @@ def process_audio_task(audio_file_id):
             audio_file.transcription_group.update_status()
         
 
+    except AudioTranscription.DoesNotExist:
+        logger.warning(f"Task process_audio_task: Audio {audio_file_id} not found (deleted or transaction lag). Aborting.")
+        return None
     except Exception as error:
         try:
             with transaction.atomic():
@@ -255,7 +294,7 @@ def retry_audio_process_task(audio_id):
                 # FILTRO DE RUIDO: Ignorar segmentos menores a 0.5 segundos
                 duration = seg['end_time'] - seg['start_time']
                 if duration < 0.5:
-                    logger.info(f"Skipping short segment duration={duration:.2f}s")
+                    logger.info(f"Skipping short segment duration={duration:.2f}s during retry")
                     continue
 
                 abs_path = Path(seg['path'])

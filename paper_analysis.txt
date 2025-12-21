@@ -1,0 +1,3 @@
+Total characters: 179087
+--- CONTENT START ---
+Error reading PDF: 'charmap' codec can't encode character '\ufb00' in position 116: character maps to <undefined>

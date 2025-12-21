@@ -1,0 +1,92 @@
+AUDIO P17.wav de la torr de control de Cuatro Vientos
+Idioma. ES
+Tráfico. principlamente VFR - escuelas de pilotos.
+Nota. Compañía es un punto de espara dentro del aeropuerto 
+
+Escotia Libra Voz S D H into the moment en el pista 2 7
+? Libra Sierra Hotel entrar y mantener pista 27
+Role: ATCO
+
+doy mantener
+calentar y mantener
+Role: Pilot
+
+Airotek Q1 Z F información D inform esperando información para entrar a aterrizar
+Aerotec 1 Zulú Foxtrot información Delta inform esperando información para entrar a aterrizar
+Role: Pilot
+
+Air T Nostru Luf F entre para viento en cual izquierda pista 2 7 QNH 1 0 1 9
+Aerotec 1 Zulú Foxtrot entre para viento en cola izquierda pista 27 QNH 1019
+Role: ATCO
+
+entro para cola venta en cola izquierdo QNH 1 0 1 9 aerotec 1 Z F
+entro para cola viento en cola izquierdo QNH 1019 aerotec 1 Zulú Foxtrot
+Role: Pilot
+
+Quality 6 E G Rueda punto espera pista 2 7
+Quality 6 Echo Golf rueda punto espera pista 27
+Role: ATCO
+
+H Punto de Espera Pista 2 7 Quality Fly 6 E G gracias
+Rodando punto de espera Pista 27 Quality Fly 6 Eco Golf
+Role: Pilot
+
+European 2 0 T X compañero general a discreción
+European 20 Tango X-ray ?compañía general a discreción
+Role: ATCO
+
+amandando pista 2 7 y vamos directamente a compañía europea
+abandonando pista 27 y vamos directamente a compañía european flyers 20 Tango
+Role: Pilot
+
+Echocha Libra Voz S H viento 2 0 0 grados 7 nudos vista 2 7 autorizado despegar
+Eco Charlie Bravo Sierra Hotel viento 200 grados 7 nudos pista 27 autorizado despegar
+Role: ATCO
+
+Alta T X S Nelma
+???? Sierra Zeta
+Role: Pilot
+
+Ryanair Cuadro Vista 1 2 1 Thunder Lira Bairra Presidente V L Salida se han bloqueado tiene salita salida
+Torre Cuatro Vientos (Pilot) / ???(Other pisando la frecuencia) / Me han bloqueado tiene permiso salida (ATCO)
+Role: Todos
+
+Qualified 5 2
+Qualify 5?
+Role: Pilot
+
+Eighty 5 8 U entrar y mantener pista 2 7
+Quality 58 Uniform entrar y mantener pista 27
+Role: ATCO
+
+terreny mantener
+entrar y mantener pista 27 Quality 5
+Role: Pilot
+
+la otra está quien llamando
+la otra te está llamando
+Role: ATCO
+
+Tarra 4 Vientos 1 Star European 3 7 V Ray
+Torre Cuatro Vientos buenas tardes European 37 Victor  X-Ray
+Role: Pilot
+
+Los Vientres 7 V Lexley buenas
+European 37 Victor buenas
+Role: ATCO
+
+buenas tardes first come plan devuelo visual instrumental a valladolí con atis D a bordo y listo copiar y listo rodar
+buenas tardes estoy con plan de vuelo visual instrumental a valladolíd con atis Delta a bordo y listo copiar y listo rodar
+Role: Pilot
+
+Confirma posición
+Me confirma posición?
+Role: ATCO
+
+disculpen compañía europea 3 7 victoria rey
+si disculpen compañía european 37 Victor X-ray
+Role: Pilot
+
+European 3 3 Trifle recibido mantenga posición le aviso para rodar el QNH 1 0 1 9 responda 3 4 2 3 ruta plan de vuelo Z a Valladolid salida vía punto W después de W frecuencia Madrid 1 2 4 . 2 3 0 y tiene un slot a las 1 1 4 1 hora actual 1 1 2 5
+European 37 Victor X-ray recibido mantenga posición le aviso para rodar el QNH 1019 responda 3423 ruta plan de vuelo Zulú a Valladolid salida vía punto Whisky después de Whisky frecuencia Madrid 124decimal230 y tiene un slot a las 1141 hora actual 1125
+Role: ATCO

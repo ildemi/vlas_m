@@ -1,6 +1,10 @@
 import re
 import unicodedata
-from .normalization_rules import get_normalization_rules
+# from .normalization_rules import get_normalization_rules  <-- REMOVED
+
+# Mocks para evitar romper código legacy si alugien lo llama
+def get_normalization_rules():
+    return {}, {}
 
 def apply_text_corrections(text, mistakes_dict):
     """
@@ -55,11 +59,13 @@ def apply_advanced_patterns(text):
 # --- Funciones de Limpieza General ---
 
 def removeNonAlphaNum(text):
+    if not text: return ""
     return ''.join(c for c in text if c.isalnum() or c == ' ')
 
 def special_characters_binary_to_asci(text):
     # Elimina tildes y diacríticos (á -> a, ñ -> n)
     # Importante para normalizar antes de buscar en diccionarios
+    if not text: return ""
     return ''.join(c for c in unicodedata.normalize('NFD', text)
                    if unicodedata.category(c) != 'Mn')
 
@@ -73,13 +79,14 @@ def filterAndNormalize(text):
     if not text: 
         return ""
     
-    # Cargar reglas desde DB (Cached or Fresh)
-    mistakes, numbers = get_normalization_rules()
+    # MOCK: Ya no cargamos reglas legacy de DB.
+    # mistakes, numbers = get_normalization_rules()
+    mistakes = {}
+    numbers = {}
 
     # 1. Limpieza básica
     # Convertir a minúsculas iniciales para análisis, pero el output puede cambiar
-    # Eliminar caracteres extraños
-    cleaned_s1 = removeNonAlphaNum(text)
+    cleaned_s1 = text # No removeNonAlphaNum para no perder info antes de tiempo
     
     # 2. Normalización de Números (uno -> 1)
     # Es útil hacerlo antes de las palabras para limpiar contexto

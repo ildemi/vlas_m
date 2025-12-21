@@ -25,7 +25,9 @@ class TranscriptionGroup(models.Model):
     validation_result = models.JSONField(null=True, blank=True)  # Detailed validation results
     validation_score = models.FloatField(null=True, blank=True)  # Global validation score from 0 to 5
     validation_calification = models.FloatField(null=True, blank=True) # Feedback score from 0 to 5
+
     validation_comment = models.TextField(null=True, blank=True) # Feedback comment
+    airport_code = models.CharField(max_length=10, null=True, blank=True, help_text="Código ICAO del aeropuerto (ej: LECU)")
 
     def __str__(self):
         # Human-readable representation of the transcription group

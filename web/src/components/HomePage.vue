@@ -7,6 +7,14 @@
       <label for="groupName">Group Name:</label>
       <input type="text" id="groupName" v-model="groupName" placeholder="Enter group name" />
 
+      <!-- Selección de Aeropuerto -->
+      <label for="airportSelect">Airport Context:</label>
+      <select id="airportSelect" v-model="selectedAirport" class="airport-select">
+        <option value="">Generic / Auto</option>
+        <option value="LECU">LECU - Madrid Cuatro Vientos (VFR/Schools)</option>
+        <option value="GCFV">GCFV - Fuerteventura (Commercial/Tourism)</option>
+      </select>
+
       <!-- Contenedor para los botones -->
       <div class="button-container">
         <button
@@ -68,6 +76,7 @@ const toast = useToast()
 
 const audioFiles = ref<File[]>([])
 const groupName = ref('')
+const selectedAirport = ref('')
 
 // Estado para controlar spinner
 const loading = ref(false)
@@ -102,6 +111,9 @@ const submitFiles = async () => {
       formData.append('file', file)
     })
     formData.append('group_name', groupName.value)
+    if (selectedAirport.value) {
+      formData.append('airport_code', selectedAirport.value)
+    }
 
     const djangourl = import.meta.env.VITE_DJANGO_URL
     const response = await axios.post(djangourl + 'create-transcription-group/', formData, {
@@ -135,6 +147,7 @@ const resetForm = () => {
   if (loading.value) return
   audioFiles.value = []
   groupName.value = ''
+  selectedAirport.value = ''
 }
 </script>
 
@@ -278,6 +291,26 @@ const resetForm = () => {
 }
 
 #groupName:focus {
+  border-color: #2196f3;
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+  outline: none;
+}
+
+.airport-select {
+  padding: 1rem 1.5rem;
+  font-size: 16px;
+  width: 100%;
+  max-width: 800px;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+  background: white;
+  margin-bottom: 1rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+}
+
+.airport-select:focus {
   border-color: #2196f3;
   box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
   outline: none;

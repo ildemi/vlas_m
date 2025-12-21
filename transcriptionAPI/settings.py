@@ -40,6 +40,25 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_BACKEND = 'django-db'
 
+# --- CELERY ROBUSTNESS SETTINGS (VLAS v2.2.1) ---
+# 1. Connection Stability: Evita errores al arrancar si RabbitMQ aun duerme
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# 2. Data Safety: Solo confirmar la tarea cuando se termine (evita pérdida si crash)
+CELERY_TASK_ACKS_LATE = True
+
+# 3. Flow Control: Como usamos GPU, el worker solo debe tener 1 tarea en mano.
+# Evita que acapare memoria y cause timeouts ("Indigestión").
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# 4. Time Limits: Evitar tareas zombies eternas
+CELERY_TASK_TIME_LIMIT = 3600       # 1 hora hard limit (mata el proceso)
+CELERY_TASK_SOFT_TIME_LIMIT = 3300  # 55 min soft limit (lanza excepción)
+
+# 5. Heartbeats: Mantener conexión viva con RabbitMQ (evita "Connection Storm")
+CELERY_BROKER_HEARTBEAT = 10 # Segundos
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 

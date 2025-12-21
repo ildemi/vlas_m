@@ -1,0 +1,566 @@
+Total characters: 57090
+--- CONTENT START ---
+Adapting Automatic Speech Recognition for
+Accented Air Traffic Control Communications
+Marcus Yu Zhe Wee, Justin Juin Hng Wong, Lynus Lim, Joe Yu Wei Tan, Prannaya Gupta,
+Dillion Lim, En Hao Tew, Aloysius Keng Siew Han, Yong Zhi Lim
+Air Emerging Technologies High-Speed Experimentations and Research (AETHER),
+RSAF Agile Innovation Digital (RAiD), Republic of Singapore Air Force, Singapore
+{marcus yu zhe wee, justin wong juin hng, lynus lim, joe tan yu wei, prannaya gupta,
+dillion lim, tew en hao, han keng siew aloysius, lim yong zhi1}@defence.gov.sg
+Abstract—Effective communication in Air Traffic Control
+(ATC) is critical to maintaining aviation safety, yet the chal-
+lenges posed by accented English remain largely unaddressed
+in Automatic Speech Recognition (ASR) systems. Existing mod-
+els struggle with transcription accuracy for Southeast Asian-
+accented (SEA-accented) speech, particularly in noisy ATC envi-
+ronments. This study presents the development of ASR models
+fine-tuned specifically for Southeast Asian accents using a newly
+created dataset. Our research achieves significant improvements,
+achieving a Word Error Rate (WER) of 0.0982 or 9.82% on
+SEA-accented ATC speech. Additionally, the paper highlights
+the importance of region-specific datasets and accent-focused
+training, offering a pathway for deploying ASR systems in
+resource-constrained military operations. The findings emphasize
+the need for noise-robust training techniques and region-specific
+datasets to improve transcription accuracy for non-Western
+accents in ATC communications.
+Index Terms—air traffic control, automatic speech recognition,
+localization, word error rate
+I. I NTRODUCTION
+Air Traffic Control (ATC) plays an indispensible role in
+ensuring the safety and efficiency of global aviation. Effective
+communication between Air Traffic Controllers (ATCOs) and
+pilots is critical as it directly impacts the operational safety
+of flight missions in and out of the military. The International
+Civil Aviation Organization (ICAO) mandates the use of stan-
+dardized phraseology to minimize communication ambiguities
+[1]. However, real-world ATC communications may deviate
+from these standards, especially in multilingual regions where
+English is spoken with various non-native accents [2]. These
+deviations, coupled with the inherent complexity of ATC
+interactions, pose significant challenges for Automatic Speech
+Recognition (ASR) systems tasked with transcribing ATC
+communications for operational use.
+Despite substantial advancements in ASR technologies,
+modern models struggle with domain-specific challenges
+unique to ATC environments [3]. These challenges include
+rapid speech rates, overlapping conversations, and high levels
+of ambient noise, such as radio interference. Moreover, South-
+east Asian-accented (SEA-accented) English remains severely
+underrepresented in public datasets, resulting in suboptimal
+transcription accuracy for this region’s ATC communications.
+Such deficiencies are particularly concerning for aviation
+safety, as errors in transcriptions can lead to severe conse-
+quences, including flight delays, near-misses, or even acci-
+dents.
+The introduction of models like OpenAI’s Whisper has
+brought new opportunities for robust ASR solutions. Whisper
+has demonstrated remarkable robustness across various accents
+and noise conditions in general speech datasets [4]. However, it
+has shown limited success in adapting to specialized domains,
+such as ATC, where region-specific accents and terminologies
+are prevalent. This limitation highlights the need for fine-
+tuning ASR models using datasets that capture the nuances
+of SEA-accented ATC speech.
+In this study, we address the gaps in ASR performance
+for SEA-accented ATC speech by introducing an accent-
+specific fine-tuning approach. We leverage a newly developed
+SEA-accented ATC dataset and employ noise-resilient training
+strategies tailored to this domain. Our research focuses on
+three primary objectives:
+1) Enhancing
+
+--- RELEVANT SECTIONS ---
+Line 17: achieving a Word Error Rate (WER) of 0.0982 or 9.82% on
+  > fine-tuned specifically for Southeast Asian accents using a newly
+  > created dataset. Our research achieves significant improvements,
+  > SEA-accented ATC speech. Additionally, the paper highlights
+  > the importance of region-specific datasets and accent-focused
+--------------------
+Line 26: localization, word error rate
+  > accents in ATC communications.
+  > Index Terms—air traffic control, automatic speech recognition,
+  > I. I NTRODUCTION
+  > Air Traffic Control (ATC) plays an indispensible role in
+--------------------
+Line 78: strate better performance in Word Error Rate (WER) of
+  > fine-tuned Whisper models is conducted, comparing to base-
+  > line and existing state-of-the-art models. Our findings demon-
+  > 0.0982 or 9.82% on our dataset, underscoring the effectiveness
+  > of region-specific fine-tuning. We also explore the broader
+--------------------
+Line 79: 0.0982 or 9.82% on our dataset, underscoring the effectiveness
+  > line and existing state-of-the-art models. Our findings demon-
+  > strate better performance in Word Error Rate (WER) of
+  > of region-specific fine-tuning. We also explore the broader
+  > implications of our approach for both civilian and military
+--------------------
+Line 132: channels while facing limitations in manpower and cognitive
+  > continuous analysis. Specialized personnel may have to man-
+  > age and tune into various streams of ATC communication
+  > capacity. The adoption of ASR systems could automate the
+  > transcription of audio streams into text, significantly reduc-
+--------------------
+Line 172: ATCOSIM [14] 10.7h German, Swiss, and French accented
+  > Madrid Airport 11.8h Spanish, English
+  > Madrid ACC 100h Spanish, English
+  > English
+  > AcListant 8h German and Czech-accented English
+--------------------
+Line 178: MALORCA 10.9h German and Czech-accented English
+  > ATCSC 4800u* English
+  > AIRBUS-ATC 59h French-accented English
+  > UWB-ATCC 179h Czech-accented English
+  > SOL-Twr 1993u* Lithuanian-accented English
+--------------------
+Line 226: Word error rate (WER) is a commonly used metric in model
+  > do not speak western-accented English.
+  > B. ASR Metrics
+  > selection and to benchmark ASR model performance [23].
+  > This metric is used in most of the papers [3], [11], [24]–[36],
+--------------------
+Line 230: and tests conducted, Combined WER is used, calculating the
+  > This metric is used in most of the papers [3], [11], [24]–[36],
+  > and also used by Whisper [37]. In our subsequent evaluation
+  > WER from the combined predicted transcriptions and ground
+  > truths across the entire dataset. The formula for Combined
+--------------------
+Line 231: WER from the combined predicted transcriptions and ground
+  > and also used by Whisper [37]. In our subsequent evaluation
+  > and tests conducted, Combined WER is used, calculating the
+  > truths across the entire dataset. The formula for Combined
+  > WER used is as such:
+--------------------
+Line 233: WER used is as such:
+  > WER from the combined predicted transcriptions and ground
+  > truths across the entire dataset. The formula for Combined
+  > Combined WER = S + D + I
+  > N
+--------------------
+Line 234: Combined WER = S + D + I
+  > truths across the entire dataset. The formula for Combined
+  > WER used is as such:
+  > N
+  > where:
+--------------------
+Line 294: models were researched in the ATC field with varying de-
+  > we selected Whisper as our candidate model for research.
+  > 4) Available Whisper Models: Before Whisper, many ASR
+  > grees of accuracy. Most notably, Convolutional Neural Net-
+  > works chained with factorized Time Delayed Neural Networks
+--------------------
+Line 297: (CNN-TDNNF) were shown to perform well, achieving ap-
+  > grees of accuracy. Most notably, Convolutional Neural Net-
+  > works chained with factorized Time Delayed Neural Networks
+  > proximately 5.0% WER for the ATCOSim dataset.
+  > Subsequently, with the introduction of Whisper, the Hug-
+--------------------
+Line 298: proximately 5.0% WER for the ATCOSim dataset.
+  > works chained with factorized Time Delayed Neural Networks
+  > (CNN-TDNNF) were shown to perform well, achieving ap-
+  > Subsequently, with the introduction of Whisper, the Hug-
+  > gingface platform 3 has featured many community-trained
+--------------------
+Line 305: COSim, beating the prior model with only 1.19% WER on
+  > accented ATC datasets and achieved significant results.
+  > Whisper-ATC fine-tuned Whisper models on ATCO2 and AT-
+  > the ATCOSim dataset.
+  > 3https://huggingface.co/
+--------------------
+Line 342: catastrophic forgetting, as the Word Error Rate (WER) for
+  > For ATC ASR, Airbus proposed a HMM-TDNN-based
+  > accent-agnostic approach [29]. However, this method exhibited
+  > previously seen accents increased when fine-tuning the model
+  > with Chinese-accented data.
+--------------------
+Line 367: To achieve this, the following steps were undertaken:
+  > a domain that is underrepresented in publicly available datasets
+  > (see Table I).
+  > A Dataset Creation: Develop a SEA-accented ATC dataset,
+  > capturing the unique characteristics of the regional accent.
+--------------------
+Line 378: D Results Analysis: The performance results were analyzed
+  > trained on ATCO2 and ATCOSIM datasets, which pre-
+  > dominantly include Western-accented English.
+  > to identify improvements and limitations.
+  > In addition, this research addresses the practical limitations
+--------------------
+Line 419: tuning. Given the size, weight, and power (SWaP) constraints
+  > B. Model Fine-Tuning
+  > Whisper offers a range of pre-trained model sizes for fine-
+  > often faced in military computing [51], [52], our model se-
+  > lection prioritized both computational efficiency and accuracy.
+--------------------
+Line 422: These models were fine-tuned on accent-specific ATC data,
+  > often faced in military computing [51], [52], our model se-
+  > lection prioritized both computational efficiency and accuracy.
+  > evaluated, and selected for testing.
+  > 1) Model Selection: Whisper Small and Whisper Large v3
+--------------------
+Line 425: Turbo were the selected models to fine-tune on the accented
+  > evaluated, and selected for testing.
+  > 1) Model Selection: Whisper Small and Whisper Large v3
+  > dataset. The reasons for our model selection are below.
+  > Whisper Small uses the traditional Whisper architecture
+--------------------
+Line 430: WER on Librispeech benchmarks [53], comparable to Whisper
+  > with 32 decoder layers [37], balancing speed and accuracy.
+  > According to benchmarks 5,6 , Whisper Small achieved 7.8%
+  > Medium at 7.432% and 5.9% with a significantly smaller
+  > model size and lesser training requirements. As Whisper Tiny
+--------------------
+Line 433: obtained a much higher WER of 17.15%, model accuracy for
+  > Medium at 7.432% and 5.9% with a significantly smaller
+  > model size and lesser training requirements. As Whisper Tiny
+  > Whisper Tiny is heavily sacrificed for model speed, making it
+  > less suitable for use.
+--------------------
+Line 490: combined WER on the validation set is calculated. For each
+  > tions on the train split over 30 epochs. After each training
+  > epoch, the model is evaluated on the validation set, and the
+  > model size, the checkpoint with the lowest validation WER
+  > was selected. The best configurations for each model are
+--------------------
+Line 491: model size, the checkpoint with the lowest validation WER
+  > epoch, the model is evaluated on the validation set, and the
+  > combined WER on the validation set is calculated. For each
+  > was selected. The best configurations for each model are
+  > shown in Table III.
+--------------------
+Line 496: Model Name Augmentations Validation WER
+  > TABLE III
+  > BEST FINE -TUNED Whisper MODELS
+  > sea-small Y 0.122
+  > sea-large-v3-turbo N 0.118
+--------------------
+Line 497: sea-small Y 0.122
+  > BEST FINE -TUNED Whisper MODELS
+  > Model Name Augmentations Validation WER
+  > sea-large-v3-turbo N 0.118
+  > 7https://github.com/iver56/audiomentations
+--------------------
+Line 498: sea-large-v3-turbo N 0.118
+  > Model Name Augmentations Validation WER
+  > sea-small Y 0.122
+  > 7https://github.com/iver56/audiomentations
+  > V. E XPERIMENTAL RESULTS
+--------------------
+Line 503: ATC, cross inference tests were conducted on ATCOSIM
+  > In order to evaluate the performance of our accent-specific
+  > fine-tuned model against currently available models Whisper-
+  > and ATCO2 alongside our Southeast Asian-accented (SEA-
+  > accented) dataset. Whisper-ATC’s models were trained on
+--------------------
+Line 505: accented) dataset. Whisper-ATC’s models were trained on
+  > ATC, cross inference tests were conducted on ATCOSIM
+  > and ATCO2 alongside our Southeast Asian-accented (SEA-
+  > ATCOSIM (containing German, Swiss and French-accented
+  > English), and ATCO2 (containing less accented English ATC
+--------------------
+Line 512: In automatic speech recognition (ASR), Word Error Rate
+  > of our proposed fine-tuning methods on SEA-accented data.
+  > C. Model Benchmarking
+  > (WER) is a critical metric for evaluating transcription ac-
+  > curacy. For high-quality, clean audio, state-of-the-art ASR
+--------------------
+Line 513: (WER) is a critical metric for evaluating transcription ac-
+  > C. Model Benchmarking
+  > In automatic speech recognition (ASR), Word Error Rate
+  > curacy. For high-quality, clean audio, state-of-the-art ASR
+  > systems have achieved WERs as low as benchmarks like
+--------------------
+Line 515: systems have achieved WERs as low as benchmarks like
+  > (WER) is a critical metric for evaluating transcription ac-
+  > curacy. For high-quality, clean audio, state-of-the-art ASR
+  > Switchboard [56]. However, in specialized domains such as air
+  > traffic control (ATC), achieving low WERs is more challenging
+--------------------
+Line 517: traffic control (ATC), achieving low WERs is more challenging
+  > systems have achieved WERs as low as benchmarks like
+  > Switchboard [56]. However, in specialized domains such as air
+  > due to factors like region-specific terminology, varied accents,
+  > and noisy communication channels.
+--------------------
+Line 520: Recent studies in the ATC domain have reported WERs
+  > due to factors like region-specific terminology, varied accents,
+  > and noisy communication channels.
+  > around 7.75% across multiple databases [6], suggesting that,
+  > while higher than those for clean audio, WERs below 25% are
+--------------------
+Line 522: while higher than those for clean audio, WERs below 25% are
+  > Recent studies in the ATC domain have reported WERs
+  > around 7.75% across multiple databases [6], suggesting that,
+  > attainable and may still be considered acceptable for certain
+  > transcription tasks [57], [58].
+--------------------
+Line 525: The best models were tested against currently available
+  > attainable and may still be considered acceptable for certain
+  > transcription tasks [57], [58].
+  > state-of-the-art models on the accent-specific datasets as well
+  > as datasets with accents separate from the domain of focus.
+--------------------
+Line 529: MODEL WER ON ATCO2, ATCOSIM, SEA- ACCENTED DATASETS
+  > as datasets with accents separate from the domain of focus.
+  > TABLE IV
+  > Model ATCO2 ATCOSIM SEA-accented
+  > Small
+--------------------
+Line 532: openai/small 0.9641 0.9106 1.2255
+  > Model ATCO2 ATCOSIM SEA-accented
+  > Small
+  > jlvdoorn/small-atco2-asr* 0.4252 0.5432 0.7039
+  > sea-small (ours) 0.5735 0.5111 0.0982
+--------------------
+Line 533: jlvdoorn/small-atco2-asr* 0.4252 0.5432 0.7039
+  > Small
+  > openai/small 0.9641 0.9106 1.2255
+  > sea-small (ours) 0.5735 0.5111 0.0982
+  > Large v3
+--------------------
+Line 534: sea-small (ours) 0.5735 0.5111 0.0982
+  > openai/small 0.9641 0.9106 1.2255
+  > jlvdoorn/small-atco2-asr* 0.4252 0.5432 0.7039
+  > Large v3
+  > openai/large-v3 0.7896 0.8035 0.9340
+--------------------
+Line 536: openai/large-v3 0.7896 0.8035 0.9340
+  > sea-small (ours) 0.5735 0.5111 0.0982
+  > Large v3
+  > jlvdoorn/large-v3-atco2-asr* 0.3762 0.4625 0.5533
+  > Large v3 Turbo
+--------------------
+Line 537: jlvdoorn/large-v3-atco2-asr* 0.3762 0.4625 0.5533
+  > Large v3
+  > openai/large-v3 0.7896 0.8035 0.9340
+  > Large v3 Turbo
+  > openai/large-v3-turbo 0.8988 0.8171 1.1967
+--------------------
+Line 539: openai/large-v3-turbo 0.8988 0.8171 1.1967
+  > jlvdoorn/large-v3-atco2-asr* 0.3762 0.4625 0.5533
+  > Large v3 Turbo
+  > sea-large-v3-turbo (ours) 0.5150 0.4110 0.1176
+  > * WHISPER-ATC models finetuned on ATCO2
+--------------------
+Line 540: sea-large-v3-turbo (ours) 0.5150 0.4110 0.1176
+  > Large v3 Turbo
+  > openai/large-v3-turbo 0.8988 0.8171 1.1967
+  > * WHISPER-ATC models finetuned on ATCO2
+  > Out of the Whisper Small models, Whisper -ATC’s
+--------------------
+Line 544: with a WER of 0.4252, while our fine-tuned model performed
+  > Out of the Whisper Small models, Whisper -ATC’s
+  > jlvdoorn/small-atco2-asr model performed the best on ATCO2
+  > the best on ATCOSIM and our SEA-accented Dataset with
+  > 0.5111 and 0.0982 WER respectively.
+--------------------
+Line 546: 0.5111 and 0.0982 WER respectively.
+  > with a WER of 0.4252, while our fine-tuned model performed
+  > the best on ATCOSIM and our SEA-accented Dataset with
+  > Out of the Whisper Large v3 models, Whisper -ATC’s
+  > jlvdoorn/large-v3-atco2-asr model outperforms OpenAI’s pre-
+--------------------
+Line 549: trained model on all datasets with 0.3762, 0.4625 and 0.5533
+  > Out of the Whisper Large v3 models, Whisper -ATC’s
+  > jlvdoorn/large-v3-atco2-asr model outperforms OpenAI’s pre-
+  > WER for ATCO2, ATCOSIM and our SEA-accented Dataset
+  > respectively.
+--------------------
+Line 550: WER for ATCO2, ATCOSIM and our SEA-accented Dataset
+  > jlvdoorn/large-v3-atco2-asr model outperforms OpenAI’s pre-
+  > trained model on all datasets with 0.3762, 0.4625 and 0.5533
+  > respectively.
+  > Out of the Whisper Large v3 Turbo models, our fine-tuned
+--------------------
+Line 554: datasets with 0.5150, 0.4110 and 0.1176 WER for ATCO2,
+  > Out of the Whisper Large v3 Turbo models, our fine-tuned
+  > model also outperforms OpenAI’s pretrained model on all
+  > ATCOSIM and our SEA-accented Dataset respectively.
+  > On the SEA-accented Dataset, our fine-tuned Whisper Small
+--------------------
+Line 557: performed the bestwith 0.0982 WER. On ATCOSIM, our fine-
+  > ATCOSIM and our SEA-accented Dataset respectively.
+  > On the SEA-accented Dataset, our fine-tuned Whisper Small
+  > tuned Whisper Large v3 Turbo performed the best with 0.4110
+  > WER. On ATCO2, Whisper -ATC’s jlvdoorn/large-v3-atco2-
+--------------------
+Line 558: tuned Whisper Large v3 Turbo performed the best with 0.4110
+  > On the SEA-accented Dataset, our fine-tuned Whisper Small
+  > performed the bestwith 0.0982 WER. On ATCOSIM, our fine-
+  > WER. On ATCO2, Whisper -ATC’s jlvdoorn/large-v3-atco2-
+  > asr performed the best with 0.3762 WER.
+--------------------
+Line 559: WER. On ATCO2, Whisper -ATC’s jlvdoorn/large-v3-atco2-
+  > performed the bestwith 0.0982 WER. On ATCOSIM, our fine-
+  > tuned Whisper Large v3 Turbo performed the best with 0.4110
+  > asr performed the best with 0.3762 WER.
+  > D. Results Analysis
+--------------------
+Line 560: asr performed the best with 0.3762 WER.
+  > tuned Whisper Large v3 Turbo performed the best with 0.4110
+  > WER. On ATCO2, Whisper -ATC’s jlvdoorn/large-v3-atco2-
+  > D. Results Analysis
+  > 1) Comparison of Model Performance: The results from
+--------------------
+Line 573: achieved a WER of 0.3762 on the ATCO2 dataset, it was
+  > portance of training data quantity, quality, and specificity to the
+  > target domain. For example, while jlvdoorn/large-v3-atco2-asr
+  > trained on only 2 hours of ATCO-released data [59]. Despite
+  > this limitation, its targeted fine-tuning enabled competitive
+--------------------
+Line 578: icantly lower WER of 0.0982 on the SEA-accented dataset.
+  > performance on this specific dataset.
+  > In contrast, our fine-tuned small model achieved a signif-
+  > This model benefited from 37 hours of region-specific training
+  > data, demonstrating the critical role of aligning training data
+--------------------
+Line 583: sharp increase in WER, highlighting its inability to generalize
+  > with the test domain [60]. However, on datasets with different
+  > accents and distinct lexicons, the same model experienced a
+  > effectively beyond its training domain [7]. This issue is at-
+  > tributed to variations in accents, terminology, and phraseology.
+--------------------
+Line 606: • Accent Adaptation. The disparity in WERs across
+  > ATC communications. Incorporating diverse noise pro-
+  > files in training data could further improve robustness.
+  > datasets highlights the importance of accent-specific mod-
+  > eling. Strategies such as transfer learning, multilingual
+--------------------
+Line 613: disproportionately affect WER. Alternative metrics, such
+  > • Evaluation Metrics for Short Transcripts. In the ATC
+  > domain, where audio clips are often short, single errors
+  > as per-word accuracy or semantic error rates, could
+  > provide a more nuanced understanding of model perfor-
+--------------------
+Line 624: could further improve transcription accuracy and reduce WER.
+  > nificant consequences [6]. Integrating contextual knowledge,
+  > such as ATC-specific phraseology databases, into ASR models
+  > The performance gap between current results and desired
+  > thresholds highlights the need for ongoing innovation in
+--------------------
+Line 674: Our best fine-tuned model achieved only 0.0982 WER on
+  > improvements in ASR tasks.
+  > B. ATC-specific Denoisers
+  > our curated Southeast Asian-accented (SEA-accented) dataset,
+  > while pre-trained Whisper models are able to perform to
+--------------------
+Line 735: Rate (WER). These findings demonstrate the potential to
+  > accent-specific modeling, and region-specific phraseology, our
+  > approach achieved substantial improvements in Word Error
+  > develop effective ASR solutions for underrepresented accent
+  > groups. This is especially important for military organizations
+--------------------
+Line 775: Transportation Security , vol. 15, pp. 87 – 118, 2020. [Online].
+  > [5] M. Smith, M. Strohmeier, V . Lenders, and I. Martinovic, “Understanding
+  > realistic attacks on airborne collision avoidance systems,” Journal of
+  > Available: https://api.semanticscholar.org/CorpusID:222124915
+  > [6] J. Zuluaga-Gomez, P. Motlicek, Q. Zhan, K. Vesel ´y, and R. Braun,
+--------------------
+Line 780: [Online]. Available: http://dx.doi.org/10.21437/interspeech.2020-2173
+  > “Automatic Speech Recognition Benchmark for Air-Traffic Commu-
+  > nications,” in Interspeech 2020 . ISCA, Oct. 2020, pp. 2297–2301.
+  > [7] Z. Wang, P. Jiang, Z. Wang, B. Han, H. Liang, Y . Ai, and
+  > W. Pan, “Enhancing Air Traffic Control Communication Systems with
+--------------------
+Line 837: abs/1810.12614, 2018. [Online]. Available: http://arxiv.org/abs/1810.
+  > Air Traffic Control speech recognition 2018 challenge: towards
+  > ATC automatic transcription and call sign detection,” CoRR, vol.
+  > 12614
+  > [20] L. ˇSm´ıdl, J. ˇSvec, D. Tihelka, J. Matou ˇsek, J. Romportl, and P. Ircing,
+--------------------
+Line 868: abs/2310.15970, 2023. [Online]. Available: https://api.semanticscholar.
+  > [26] D. Prabhu, P. Jyothi, S. Ganapathy, and V . Unni, “Accented
+  > Speech Recognition With Accent-specific Codebooks,” ArXiv, vol.
+  > org/CorpusID:264439549
+  > [27] J. Li, V . Manohar, P. Chitkara, A. Tjandra, M. Picheny, F. Zhang,
+--------------------
+Line 873: arXiv:2110.03520, 2021.
+  > X. Zhang, and Y . Saraf, “Accent-robust automatic speech recognition
+  > using supervised and unsupervised wav2vec embeddings,”arXiv preprint
+  > [28] K. Deng, S. Cao, and L. Ma, “Improving Accent Identification and
+  > Accented Speech Recognition Under a Framework of Self-supervised
+--------------------
+Line 888: https://doi.org/10.1121/10.0024876
+  > Performance analysis across diverse accents and speaker traits,” JASA
+  > Express Letters, vol. 4, no. 2, p. 025206, 02 2024. [Online]. Available:
+  > [32] R. Sanabria, N. Bogoychev, N. Markl, A. Carmantini, O. Klejch,
+  > and P. Bell, “The Edinburgh International Accents of English
+--------------------
+Line 931: 2024, pp. 1–10.
+  > Automatic Speech Recognition,” in 2024 International Conference on
+  > Military Communication and Information Systems (ICMCIS) . IEEE,
+  > [42] S. Chen, H. Helmke, R. M. Tarakan, O. Ohneiser, H. D. Kopald,
+  > and M. Kleinert, “Effects of Language Ontology on Transatlantic
+--------------------
+Line 967: PLoS computational biology , vol. 16, no. 10, p. e1008228, 2020.
+  > [50] T. Sainburg, M. Thielk, and T. Q. Gentner, “Finding, visualizing, and
+  > quantifying latent structure across diverse animal vocal repertoires,”
+  > [51] V . R. Dasari, M. S. Im, and B. Geerhart, “Complexity and
+  > mission computability of adaptive computing systems,” The Journal
+--------------------
+Line 972: http://dx.doi.org/10.1177
+  > of Defense Modeling and Simulation: Applications, Methodology,
+  > Technology, vol. 19, no. 1, pp. 5–11, sep 2019. [Online]. Available:
+  > [52] M. S. Im, V . R. Dasari, L. Beshaj, and D. R. Shires, “Optimization
+  > problems with low swap tactical computing,” in Disruptive Technologies
+--------------------
+Line 975: in Information Sciences II , M. Blowers, R. D. Hall, and V . R.
+  > [52] M. S. Im, V . R. Dasari, L. Beshaj, and D. R. Shires, “Optimization
+  > problems with low swap tactical computing,” in Disruptive Technologies
+  > Dasari, Eds. SPIE, may 2019, p. 14. [Online]. Available: http:
+  > //dx.doi.org/10.1117/12.2518917
+--------------------
+Line 977: //dx.doi.org/10.1117/12.2518917
+  > in Information Sciences II , M. Blowers, R. D. Hall, and V . R.
+  > Dasari, Eds. SPIE, may 2019, p. 14. [Online]. Available: http:
+  > [53] V . Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Librispeech:
+  > An ASR corpus based on public domain audio books,” in 2015 IEEE
+--------------------
+Line 981: (ICASSP), 2015, pp. 5206–5210.
+  > An ASR corpus based on public domain audio books,” in 2015 IEEE
+  > International Conference on Acoustics, Speech and Signal Processing
+  > [54] M. Boyer, L. J. Bouyer, J. S. Roy, and A. Campeau-Lecours, “Reducing
+  > Noise, Artifacts and Interference in Single-Channel EMG Signals:
+--------------------
+Line 992: Zero Oracle Word Error Rate on the Switchboard Benchmark,”
+  > https://api.semanticscholar.org/CorpusID:245853636
+  > [56] A. Faria, A. Janin, S. Adkoli, and K. Riedhammer, “Toward
+  > in Interspeech 2022 . ISCA, Sep. 2022, pp. 3973–3977. [Online].
+  > Available: http://dx.doi.org/10.21437/interspeech.2022-10959
+--------------------
+Line 994: Available: http://dx.doi.org/10.21437/interspeech.2022-10959
+  > Zero Oracle Word Error Rate on the Switchboard Benchmark,”
+  > in Interspeech 2022 . ISCA, Sep. 2022, pp. 3973–3977. [Online].
+  > [57] C. Munteanu, G. Penn, R. Baecker, E. Toms, and D. James,
+  > “Measuring the acceptable word error rate of machine-generated
+--------------------
+Line 996: “Measuring the acceptable word error rate of machine-generated
+  > Available: http://dx.doi.org/10.21437/interspeech.2022-10959
+  > [57] C. Munteanu, G. Penn, R. Baecker, E. Toms, and D. James,
+  > webcast transcripts,” in Interspeech 2006 . ISCA, Sep. 2006, pp.
+  > 1756–Mon1CaP.2–0. [Online]. Available: http://dx.doi.org/10.21437/
+--------------------
+Line 998: 1756–Mon1CaP.2–0. [Online]. Available: http://dx.doi.org/10.21437/
+  > “Measuring the acceptable word error rate of machine-generated
+  > webcast transcripts,” in Interspeech 2006 . ISCA, Sep. 2006, pp.
+  > interspeech.2006-40
+  > [58] R. Fish, Q. Hu, and S. Boykin, “Using Audio Quality to Predict
+--------------------
+Line 1001: Word Error Rate in an Automatic Speech Recognition System,” The
+  > interspeech.2006-40
+  > [58] R. Fish, Q. Hu, and S. Boykin, “Using Audio Quality to Predict
+  > MITRE Corporation, Technical Report, 2006. [Online]. Available:
+  > https://www.mitre.org/sites/default/files/pdf/06 1154.pdf
+--------------------
+Line 1009: http://dx.doi.org/10.3390/aerospace10100898
+  > Control Communications for Robust Automatic Speech Understanding,”
+  > Aerospace, vol. 10, no. 10, p. 898, oct 2023. [Online]. Available:
+  > [60] P. Ircing and D. Tihelka, “Air traffic control communication (atcc) speech
+  > corpora and their use for asr and tts development,” Language Resources
+--------------------
+Line 1013: https://link.springer.com/article/10.1007/s10579-019-09449-5
+  > corpora and their use for asr and tts development,” Language Resources
+  > and Evaluation , vol. 53, pp. 601–621, 2019. [Online]. Available:
+  > [61] International Civil Aviation Organization (ICAO), Manual of
+  > Radiotelephony, 2018, accessed: January 8, 2025. [Online]. Available:
+--------------------

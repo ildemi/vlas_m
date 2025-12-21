@@ -1,53 +1,49 @@
-# Situational Awareness (SA) - VLAS v2.2 Project
+# Situational Awareness - VLAS v2.0 (Hybrid Edition)
 
-## 1. Project Overview
-**VLAS (Voice Legal Analysis System)** is a commercial-grade application designed for **Hybrid ATC Environments** (Spanish/English).
-**Core Mission:**
-1.  **Transcribe** mixed ATC communications using specialized models (`faster-whisper` + `large-v3-atco2`).
-2.  **Normalize** output using a multi-layer strategy (Context Priming -> Deterministic Regex -> LLM Semantic Correction).
-3.  **Analyze** adherence to SERA/RCA regulations using LLMs.
-4.  **Train** custom models (Fine-tuning) via a "Human-in-the-loop" data engine.
+## Project Overview
+VLAS is an advanced ATC transcription and analysis tool tailored for Spanish airspace (LECU, GCFV).
+Current Version State: **v2.2 (Hybrid Whisper + Gemini)**
 
-## 2. System Architecture
-*   **Root Path:** `c:\Users\esdei\sa3i_vlas`
-*   **Backend (`/api`):** Python/Django + Celery + RabbitMQ.
-    *   **ASR Engine:** `faster-whisper` (CTranslate2 backend, `float16` quantization) for 4x speed.
-    *   **Logic:** `transcriber` (Audio processing), `validator` (LLM analysis).
-    *   **Normalization:** Database-backed deterministic rules + Whisper Prompting.
-*   **Frontend (`/web`):** React + Vite + TypeScript.
-*   **AI/LLM:**
-    *   **Transcription:** `whisper-large-v3-atco2-asr`.
-    *   **Validation:** Local Ollama (Phi-4) or Cloud Gemini 1.5 Pro.
-*   **Infrastructure:** Dockerized Microservices (`vm_vlas` network).
+## Key Features Implemented
 
-## 3. Current Status (2025-12-09)
-**Phase:** Normalization Engine COMPLETE.
+### 1. Transcription Pipeline (3-Layer Architecture)
+*   **Layer 1: Contextual Prompting (Whisper)**
+    *   Updated `airport_prompts.py` for LECU to handle Code-Switching (Spanish/English mix).
+    *   Includes examples like "QNH One Zero One Nine".
+*   **Layer 2: Deterministic Normalization (Regex)**
+    *   Located in `api/transcriber/normalization_rules.py`.
+    *   Handles common Whisper errors: `Tower`->`Torre`, `Array`->`X-Ray`.
+    *   **CRITICAL FIX:** Added English number words (`zero`, `one`, `nine`) to `COMMON_RULES` to fix QNH formatting issues caused by Whisper's language bias.
+*   **Layer 3: Semantic Sanitizer (LLM - *NEW*)**
+    *   Located in `api/transcriber/semantic_sanitizer.py`.
+    *   **Engine:** moved from Ollama (Phi-4) to **Google Gemini 1.5 Flash** (via Cloud API) for speed and VRAM efficiency.
+    *   **Function:** Refines text (fixes punctuation/grammar without altering technical phraseology) and **Auto-Classifies Speakers** (ATCO vs PILOT).
+    *   Integrated into `api/tasks.py`.
 
-### Recent Victories
-1.  **Project Structure:** Cleaned up `api` vs `models` app conflict. Now `api` is the single source of truth.
-2.  **Normalization Seeding:** Successfully moved legacy regex rules + NATO alphabet into PostgreSQL.
-3.  **Layer 2 Implementation:** Refactored `normalize.py` to load rules dynamically from DB.
-4.  **Verification:** Validated that "uno" -> "1" works via Django Shell.
+### 2. Frontend (Vue.js)
+*   **Reactive Updates:** Fixed `AudioSegment.vue` to watch for Segment ID changes. This solved the "Error Updating" bug after a Retry operation.
+*   **Retry UI:** Now properly reflects changes (blue/gray status transitions) and updates text automatically.
 
-### Critical Blockers
-*   None.
+### 3. Infrastructure (Docker)
+*   **Hybrid Setup:**
+    *   `vlas-celery-1`: Runs Whisper (Local GPU) and connects to Gemini API.
+    *   Dependencies: Added `google-generativeai`.
+*   **Environment:** requires `GEMINI_API_KEY` in `.env`.
 
-### Next Steps
-1.  **Add Missing Rules:** Some legacy dictionaries were incomplete (e.g. "Victoria" -> "Victor" was missing). We need a way to add rules easily (Admin Panel?).
-2.  **Layer 1 (Prompting):** Verify `initial_prompt` in `transcriber.py`.
-3.  **Frontend Integration:** Ensure frontend displays the corrected text.
+### 4. Known Behaviors
+*   **Retry Status:** Transitions `In Process` (Blue) -> `Pending` (Gray, during Rediarization save) -> `In Process` (Blue, Transcribing) -> `Processed` (Green). This is normal architecture behavior.
+*   **Performance:** Transcription is now fast (Whisper GPU) + Instant Semantic Analysis (Gemini Flash).
 
-## 4. IMMEDIATE ACTION PLAN
-**Done.** The Normalization Engine is active.
-Any new transcription will query the DB for rules.
+## Recent Fixes (Session Log)
+*   Resolved "Exit code 1" on startup (Import error in `normalize.py`).
+*   Fixed Docker volume permissions for `/app/media`.
+*   Added English-to-Digit normalization for QNH.
+*   Switched Semantic Sanitizer from Ollama (VRAM bottleneck) to Gemini API.
 
-To add new rules:
-Use Django Admin (`/admin`) to add `TranscriptionCorrection` entries.
+## Next Steps / Pending
+*   **Validation:** Verify that `ATCO`/`PILOT` classification is accurate with the new stricter prompt.
+*   **Refinement:** Continue tuning normalization rules based on real-world checks (e.g. specific callsigns).
+*   **Deployment:** The current codebase is stable and "Hybrid-Ready".
 
-
-If Docker/Ports fail or session resets:
-1.  **Start Docker Desktop** & wait for green light.
-2.  `cd c:\Users\esdei\sa3i_vlas`
-3.  `docker compose -f docker/docker-compose.yml --env-file .env up -d`
-4.  **Check migrations:** `docker exec vlas-django-1 python manage.py migrate`
-5.  **Green Status:** Check `http://localhost:8080` -> IA Status.
+---
+*Last Updated: 2025-12-19*
