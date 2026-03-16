@@ -140,3 +140,4 @@ zopfli==0.2.3.post1
 zstandard==0.23.0
 pyannote.audio==3.3.2
 git+https://github.com/huggingface/diarizers.git
+google-generativeai==0.8.6

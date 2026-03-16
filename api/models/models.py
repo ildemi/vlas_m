@@ -2,115 +2,109 @@ import uuid
 from django.db import models
 from django.contrib.auth.models import User
 
-# Model representing a group of audio transcriptions associated with a user
-class TranscriptionGroup(models.Model):
-    # Status options for the transcription group
+# ==========================================
+# VLAS 3.0 CORE MODELS
+# ==========================================
+
+class CommunicationSession(models.Model):
+    """
+    Representa un evento operativo único (ej: una guardia, una sesión de entrenamiento).
+    Es la entidad principal que se muestra en el Dashboard.
+    Sustituye al antiguo 'TranscriptionGroup'.
+    """
     STATUS_CHOICES = [
-        ('pending', 'Pending'),  # Group is waiting for processing
-        ('in_process', 'In Process'),  # At least one audio is being processed
-        ('processed', 'Processed'),  # All audios have been successfully processed
-        ('failed', 'Failed'),  # At least one audio failed to process
-        ('cancelled', 'Cancelled'),  # Processing was cancelled
-    ]
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)  # Unique identifier for the group
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)  # User who owns this group
-    group_name = models.CharField(max_length=100, null=False, blank=False)  # Name of the group
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')  # Current status of the group
-    creation_date = models.DateTimeField(auto_now_add=True)  # Timestamp when the group was created
-    completion_date = models.DateTimeField(null=True, blank=True)  # Optional timestamp when processing completed
-    # Campos para almacenar información de validación
-    validation_date = models.DateTimeField(null=True, blank=True)  # Timestamp when validation was completed
-    validation_status = models.CharField(max_length=20, null=True, blank=True)  # Success or error status
-    validation_result = models.JSONField(null=True, blank=True)  # Detailed validation results
-    validation_score = models.FloatField(null=True, blank=True)  # Global validation score from 0 to 5
-    validation_calification = models.FloatField(null=True, blank=True) # Feedback score from 0 to 5
-
-    validation_comment = models.TextField(null=True, blank=True) # Feedback comment
-    airport_code = models.CharField(max_length=10, null=True, blank=True, help_text="Código ICAO del aeropuerto (ej: LECU)")
-
-    def __str__(self):
-        # Human-readable representation of the transcription group
-        return f"{self.group_name} ({self.id})"
-
-    def update_status(self):
-        # Updates the status of the group based on the statuses of associated audios
-        audios = self.audios.all()  # Retrieve all audio files linked to this group
-
-        # Check the statuses of the associated audios and update group status accordingly
-        if all(audio.status == 'processed' for audio in audios):
-            self.status = 'processed'
-        elif any(audio.status == 'in_process' for audio in audios):
-            self.status = 'in_process'
-        elif any(audio.status == 'failed' for audio in audios):
-            self.status = 'failed'
-        elif all(audio.status == 'cancelled' for audio in audios):
-            self.status = 'cancelled'
-        else:
-            self.status = 'pending'
-
-        self.save()  # Save the updated status to the database
-
-# Model representing an individual audio transcription
-class AudioTranscription(models.Model):
-    # Status options for the audio transcription
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),  # Audio is waiting for processing
-        ('in_process', 'In Process'),  # Audio is currently being processed
-        ('processed', 'Processed'),  # Audio has been successfully processed
-        ('failed', 'Failed'),  # Audio processing failed
-        ('cancelled', 'Cancelled'),  # Processing was cancelled
-    ]
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)  # Unique identifier for the audio
-    transcription_group = models.ForeignKey(
-        TranscriptionGroup, 
-        related_name='audios',  # Enables reverse lookup from group to audios
-        on_delete=models.SET_NULL,  # Allows group deletion without deleting the audios
-        null=True
-    )
-    order = models.PositiveIntegerField(default=0) # Order for the audio in the group
-    file = models.FileField(upload_to='audios/')  # Field to store the audio file
-    file_name = models.CharField(max_length=255, blank=True)  # Optional field to store a custom file name
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')  # Current status of the audio
-    upload_date = models.DateTimeField(auto_now_add=True)  # Timestamp when the audio was uploaded
-    transcription_date = models.DateTimeField(null=True, blank=True)  # Optional timestamp when transcription completed
-    task_id = models.CharField(max_length=255, null=True, blank=True)  # id tarea Celery que transcribe este segmento
-
-    class Meta:
-        ordering = ['order']
-
-    def __str__(self):
-        # Human-readable representation of the audio transcription
-        return f"Audio {self.file_name} ({self.status})"
-
-class SpeechSegment(models.Model):
-    SPEAKER_TYPE_CHOICES = [
-        ('atco', 'ATCO'),
-        ('pilot', 'Pilot'),
-        ('', 'Unspecified'),
-        ('other', 'Other'),
+        ('pending', 'Pending'),        # Subido, esperando proceso
+        ('processing', 'Processing'),  # Diarizando/Transcribiendo
+        ('ready', 'Ready for Review'), # Transcrito, espera revisión humana
+        ('validated', 'Validated'),    # Validado por Safety (Auditoría cerrada)
+        ('error', 'Error'),            # Fallo técnico
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    audio = models.ForeignKey(
-        AudioTranscription,
-        related_name='segments',
-        on_delete=models.CASCADE
-    )
-    segment_file = models.FileField(upload_to='segments/', null=True, blank=True)
-    speaker_type = models.CharField(max_length=10, choices=SPEAKER_TYPE_CHOICES, default='', blank=True)
-    text = models.TextField(null=True, blank=True)
-    modified_text = models.TextField(null=True, blank=True)
-    start_time = models.FloatField(null=True, blank=True)
-    end_time = models.FloatField(null=True, blank=True)
-    order = models.PositiveIntegerField()
+    
+    # Ownership & Context
+    atco = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sessions', help_text="El controlador propietario de la sesión")
+    airport_code = models.CharField(max_length=10, help_text="Código ICAO (ej: LECU, LEMD)")
+    sector_id = models.CharField(max_length=50, blank=True, help_text="Identificador opcional del sector (ej: Norte, Aproximación)")
+    
+    # Metadata
+    session_date = models.DateTimeField(help_text="Fecha/Hora real del evento operativo")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Fecha de subida al sistema")
+    
+    # Status & Audit
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # Safety Scores (Calculados tras validación)
+    safety_score = models.IntegerField(null=True, blank=True, help_text="Puntuación global 0-100")
+    
+    # Validation Data
+    validation_report = models.JSONField(null=True, blank=True, help_text="Informe JSON completo de errores detectados")
+    is_flagged = models.BooleanField(default=False, help_text="Si ha sido marcado para revisión por un supervisor")
 
     class Meta:
-        ordering = ['order']
+        ordering = ['-session_date']
 
     def __str__(self):
-        return f"{self.audio.file_name} - {self.order}"
+        return f"{self.airport_code} - {self.session_date.strftime('%Y-%m-%d %H:%M')} ({self.atco.username})"
+
+
+class AudioFile(models.Model):
+    """
+    Archivos de audio "crudos" que componen la sesión.
+    Sustituye al antiguo 'AudioTranscription'.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(CommunicationSession, related_name='audios', on_delete=models.CASCADE)
+    
+    file = models.FileField(upload_to='sessions/audio/')
+    original_filename = models.CharField(max_length=255)
+    duration_seconds = models.FloatField(null=True, blank=True)
+    
+    # Technical status of THIS specific file (processed or not)
+    is_processed = models.BooleanField(default=False)
+    processing_error = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return self.original_filename
+
+
+class SpeechSegment(models.Model):
+    """
+    Unidad atómica de comunicación. Una frase dicha por alguien.
+    """
+    SPEAKER_ROLES = [
+        ('ATCO', 'Controller'),
+        ('PILOT', 'Pilot'),
+        ('OTHER', 'Other/Noise'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Vinculación directa al AUDIO (físico)
+    audio_file = models.ForeignKey(AudioFile, related_name='segments', on_delete=models.CASCADE)
+    
+    # Tiempos
+    start_time = models.FloatField()
+    end_time = models.FloatField()
+    
+    # Contenido
+    speaker_role = models.CharField(max_length=10, choices=SPEAKER_ROLES, default='OTHER')
+    text_content = models.TextField(help_text="Transcripción final editada")
+    original_ai_text = models.TextField(help_text="Transcripción original de Whisper (para deshacer cambios)", null=True, blank=True)
+    
+    # Auditoría del Segmento
+    has_error = models.BooleanField(default=False)
+    error_details = models.JSONField(null=True, blank=True, help_text="Detalle del error normativo en este segmento")
+
+    # Segment audio snippet (opcional, para performance)
+    segment_file_path = models.CharField(max_length=500, null=True, blank=True, help_text="Ruta al recorte de audio si se genera")
+
+    class Meta:
+        ordering = ['start_time']
+
+# ==========================================
+# AUXILIARY MODELS
+# ==========================================
 
 class Airline(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -123,15 +117,14 @@ class Airline(models.Model):
 
 class TranscriptionCorrection(models.Model):
     """
-    Mapeo de errores comunes de transcripción a su forma correcta.
-    Ejemplo: 'rayan air' -> 'ryanair', 'fife' -> 'five'
+    Diccionario de correcciones automáticas (Whisper hallucination fix).
     """
-    incorrect_text = models.CharField(max_length=100, unique=True, help_text="Texto incorrecto (en minúsculas)")
-    correct_text = models.CharField(max_length=100, help_text="Texto corregido")
+    incorrect_text = models.CharField(max_length=100, unique=True)
+    correct_text = models.CharField(max_length=100)
     category = models.CharField(max_length=50, choices=[
         ('airline', 'Aerolínea'),
         ('number', 'Número'),
-        ('terminology', 'Terminología Aeronáutica'),
+        ('terminology', 'Terminología'),
         ('general', 'General')
     ], default='general')
 

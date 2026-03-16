@@ -1,351 +1,143 @@
-from celery import shared_task, current_app
-from django.db import transaction
-from django.utils import timezone
 import os
-
-from .transcriber.transcriber import transcriber_instance
-from .validator.validation import Validator
-from api.models import AudioTranscription, TranscriptionGroup, SpeechSegment
 import logging
+from pathlib import Path
+from celery import shared_task
+from django.db import transaction
+from django.conf import settings
+from django.utils import timezone
+
+from api.models.models import AudioFile, SpeechSegment, CommunicationSession
+
+# AI Components
+from .transcriber.transcriber import transcriber_instance
+from .diarizer import AudioDiarization
+from .transcriber.semantic_sanitizer import get_sanitizer
 
 logger = logging.getLogger(__name__)
 
-@shared_task
-def process_audio_task(audio_file_id):
+@shared_task(bind=True)
+def process_audio_file_task(self, audio_file_id):
+    """
+    Tarea Maestra que orquesta el pipeline completo para VLAS 3.0:
+    1. Diarización (Pyannote) -> Separa hablantes y segmentos.
+    2. Transcripción (Whisper) -> Audio a Texto.
+    3. Sanitización (Gemini) -> Limpieza y Clasificación de Hablantes.
+    4. Guardado en DB.
+    """
     try:
+        # Recuperar el AudioFile
+        try:
+            audio_file = AudioFile.objects.get(id=audio_file_id)
+        except AudioFile.DoesNotExist:
+            logger.error(f"AudioFile {audio_file_id} not found.")
+            return
 
-        # Retry logic: Wait for DB commit visibility if called immediately after view
-        for i in range(3):
-            try:
-                with transaction.atomic():
-                    audio_file = AudioTranscription.objects.select_for_update().get(id=audio_file_id)
-                    break 
-            except AudioTranscription.DoesNotExist:
-                if i == 2: raise # Final attempt failed
-                import time; time.sleep(1) # Wait 1s and retry
+        # Actualizar estado de la Sesión a 'Processing' si no lo está
+        session = audio_file.session
+        if session.status != 'processing':
+            session.status = 'processing'
+            session.save()
 
-            
-            if audio_file.status == 'cancelled':
-                print(f"Transcripción {audio_file_id} está cancelada, no se procesará.")
-                return None
-            
-            if audio_file.status not in ['pending', 'in_process']:
-                print(f"Transcripción {audio_file_id} en estado {audio_file.status}, no se procesa.")
-                return None
-            
-            audio_file.status = 'in_process'
+        logger.info(f"Processing AudioFile {audio_file_id} for Session {session.id}")
+        file_path = audio_file.file.path
+
+        # ---------------------------------------------------------
+        # PASO 1: DIARIZACIÓN
+        # ---------------------------------------------------------
+        logger.info(f"Starting Diarization for {file_path}")
+        try: 
+            diarizer = AudioDiarization()
+            # invoke devuelve lista de dicts: {'path': '...', 'start_time': 0.0, 'end_time': 2.5, 'label': 'SPEAKER_00'}
+            diarized_segments = diarizer.invoke(file_path)
+        except Exception as e:
+             logger.error(f"Diarization failed: {e}")
+             raise e
+
+        if not diarized_segments:
+            logger.warning("No segments found in audio.")
+            audio_file.is_processed = True
             audio_file.save()
-            audio_file.transcription_group.update_status()
-        
-        # Verificamos que el archivo exista
-        file_path = audio_file.file.path if audio_file.file else None
-        if not file_path or not os.path.exists(file_path):
-            raise FileNotFoundError(f"No se encontró el archivo de audio: {file_path}")
-        
-        # Obtenemos todos los segmentos ordenados por orden
-        segments = SpeechSegment.objects.filter(audio=audio_file).order_by('order')
-        
-        from .transcriber.semantic_sanitizer import get_sanitizer
-        sanitizer = get_sanitizer()
-        context_window = [] # Lista de strings para dar contexto al LLM
+            return
 
-        # Transcribir segmento a segmento
-        for segment in segments:
-            seg_file_path = segment.segment_file.path
-            if not os.path.exists(seg_file_path):
-                raise FileNotFoundError(f"No se encontró el archivo de segmento: {seg_file_path}")
+        # ---------------------------------------------------------
+        # PASO 2: TRANSCRIPCIÓN Y SANITIZACIÓN (Loop)
+        # ---------------------------------------------------------
+        sanitizer = get_sanitizer()
+        context_window = [] # Memoria temporal para Gemini
+
+        for idx, seg_data in enumerate(diarized_segments, start=1):
+            seg_abs_path = Path(seg_data['path'])
+            start_time = seg_data['start_time']
+            end_time = seg_data['end_time']
             
-            # Obtener airport_code del grupo
-            airport_code = audio_file.transcription_group.airport_code if audio_file.transcription_group else None
-            
-            # 1. Capa 1 & 2: Whisper + Regex
-            text = transcriber_instance.invoke(audio_path=seg_file_path, normalize=True, airport_id=airport_code)
-            
-            # Filtro de Segmentos Vacíos o Muy Cortos (Noise Gate)
-            if not text or len(text.strip()) < 2:
-                logger.info(f"Skipping empty/short transcription for segment {segment.id}")
-                segment.delete() # Eliminar el segmento fantasma
+            # --- 2.1 Whisper ---
+            raw_text = transcriber_instance.invoke(
+                audio_path=str(seg_abs_path),
+                normalize=True,
+                airport_id=session.airport_code # Priming with airport code
+            )
+
+            # Noise Gate
+            if not raw_text or len(raw_text.strip()) < 2:
                 continue
 
-            # 2. Capa 3: Semantic Sanitizer (LLM)
+            # --- 2.2 Semantic Sanitizer (Gemini) ---
             # Pasamos las últimas 3 frases como contexto
-            sanitized = sanitizer.invoke(text=text, context_window=context_window[-3:])
-            
-            refined_text = sanitized.get('refined_text', text)
-            speaker = sanitized.get('speaker', 'OTHER').lower() # DB usa lowercase
-
-            logger.info(f"Segment {segment.id}: Text='{refined_text}', Speaker='{speaker}'")
-
-            # Actualizar contexto
-            context_window.append(f"{speaker.upper()}: {refined_text}")
-
-            # Guardamos texto en el segmento
-            segment.text = refined_text
-            segment.speaker_type = speaker # Guardamos el rol detectado
-            
-            if not segment.modified_text:
-                segment.modified_text = refined_text
-            segment.save()
-        
-        with transaction.atomic():
-            audio_file = AudioTranscription.objects.select_for_update().get(id=audio_file_id)
-            
-            if audio_file.status == 'cancelled':
-                print(f"Transcripción {audio_file_id} cancelada después del procesamiento.")
-                return None
-            
-            audio_file.status = 'processed'
-            audio_file.transcription_date = timezone.now()
-            audio_file.save()
-            audio_file.transcription_group.update_status()
-        
-
-    except AudioTranscription.DoesNotExist:
-        logger.warning(f"Task process_audio_task: Audio {audio_file_id} not found (deleted or transaction lag). Aborting.")
-        return None
-    except Exception as error:
-        try:
-            with transaction.atomic():
-                audio_file = AudioTranscription.objects.select_for_update().get(id=audio_file_id)
-                if audio_file.status != 'cancelled':
-                    audio_file.status = 'failed'
-                    audio_file.save()
-                    audio_file.transcription_group.update_status()
-        except:
-            pass
-        
-        raise error
-
-
-def cancel_group_tasks(group_id):
-    """
-    Cancela todas las tareas de transcripción pendientes o en proceso
-    para un grupo específico.
-    """
-    try:
-        from api.models import TranscriptionGroup
-        group = TranscriptionGroup.objects.get(id=group_id)
-
-        # Para mayor consistencia, puedes usar transacción
-        with transaction.atomic():
-            # Bloqueamos el grupo mientras lo actualizamos
-            group = TranscriptionGroup.objects.select_for_update().get(id=group_id)
-            
-            # Obtenemos los audios que están pendientes o en proceso
-            audios = AudioTranscription.objects.select_for_update().filter(
-                transcription_group_id=group_id,
-                status__in=['pending', 'in_process']
+            sanitization_result = sanitizer.invoke(
+                text=raw_text,
+                context_window=context_window[-3:]
             )
             
-            for audio in audios:
-                # Revocar la tarea en Celery (terminate=False evita matar el proceso brutalmente)
-                # Si quisieras forzar la detención inmediata, usarías terminate=True 
-                current_app.control.revoke(audio.task_id, terminate=False)
-                
-                # Marcar como cancelado en BD
-                audio.status = 'cancelled'
-                audio.save()
+            refined_text = sanitization_result.get('refined_text', raw_text)
+            speaker_role = sanitization_result.get('speaker', 'OTHER').upper() # ATCO, PILOT, OTHER
 
-            # Ahora, según los audios que tenga el grupo, re-evaluamos el status general
-            if audios.exists():
-                group.status = 'cancelled'
-            else:
-                # Si no hay audios pendientes/en proceso, ver estado global
-                all_audios = AudioTranscription.objects.filter(transcription_group_id=group_id)
-                if all_audios.filter(status='processed').exists():
-                    group.status = 'processed'
-                elif all_audios.filter(status='failed').exists():
-                    group.status = 'failed'
-                else:
-                    group.status = 'cancelled'
+            # Update context
+            context_window.append(f"{speaker_role}: {refined_text}")
+
+            # --- 2.3 Guardar SpeechSegment ---
+            relative_path = seg_abs_path.relative_to(settings.MEDIA_ROOT) if seg_abs_path.is_absolute() else seg_abs_path
+
+            # Mapeo de roles estandarizados
+            db_role = 'OTHER'
+            if 'ATCO' in speaker_role: db_role = 'ATCO'
+            elif 'PILOT' in speaker_role: db_role = 'PILOT'
+
+            SpeechSegment.objects.create(
+                audio_file=audio_file,
+                start_time=start_time,
+                end_time=end_time,
+                speaker_role=db_role,
+                text_content=refined_text,
+                original_ai_text=raw_text,
+                segment_file_path=str(relative_path)
+            )
             
-            group.save()
+        # ---------------------------------------------------------
+        # FIN DEL PROCESO
+        # ---------------------------------------------------------
+        audio_file.is_processed = True
+        audio_file.save()
         
-        return True
+        # Verificar si la sesión ha terminado (todos los audios procesados)
+        all_audios = session.audios.all()
+        if all(a.is_processed for a in all_audios):
+            session.status = 'ready' # Lista para revisión humana
+            session.save()
+
+        logger.info(f"Finished processing AudioFile {audio_file_id}")
 
     except Exception as e:
-        print(f"Error al cancelar las tareas del grupo: {str(e)}")
-        return False
-
-@shared_task
-def validate_conversation_task(conversation_data, model="phi4", group_id=None):
-    """
-    Tarea asíncrona para validar una conversación utilizando el validador y
-    guardar los resultados en el modelo TranscriptionGroup si se proporciona un group_id.
-    
-    Args:
-        conversation_data (list[tuple[str, str]]): Lista de tuplas donde cada tupla contiene:
-            - str: El rol del hablante (ej: 'pilot', 'atco')
-            - str: La frase dicha por esa persona
-        model (str, opcional): El modelo a utilizar para la validación. Por defecto "phi4"
-        group_id (str, opcional): ID del grupo de transcripción para guardar los resultados
-    
-    Returns:
-        dict: Resultado de la validación que incluye:
-            - Lista de errores encontrados
-            - Puntuaciones por diferentes categorías
-            - Detalles de la validación de cada frase
-            - Puntuación global del análisis
-    """
-    try:
-        # Si se proporcionó un group_id, marcamos el grupo como en proceso
-        if group_id:
-            with transaction.atomic():
-                try:
-                    group = TranscriptionGroup.objects.select_for_update().get(id=group_id)
-                    group.validation_status = 'in_process'
-                    group.save()
-                except TranscriptionGroup.DoesNotExist:
-                    print(f"No se encontró el grupo de transcripción con ID: {group_id}")
-                except Exception as db_error:
-                    print(f"Error al actualizar el estado de validación: {str(db_error)}")
-        
-        # Inicializamos el validador con el modelo especificado
-        validator = Validator(model=model)
-        
-        # Invocamos la validación
-        # El método invoke ahora devuelve un resultado serializado
-        result = validator.invoke(conversation_data)
-        
-        # Aseguramos que existe una puntuación global en el resultado
-        if 'score' in result and 'puntuacion_total' in result['score']:
-            # Extraemos la puntuación global para guardarla directamente en el grupo
-            puntuacion_global = None
-            if isinstance(result['score']['puntuacion_total'], dict) and 'score' in result['score']['puntuacion_total']:
-                puntuacion_global = result['score']['puntuacion_total']['score']
-            elif isinstance(result['score']['puntuacion_total'], str):
-                # Intentar extraer el valor numérico si es una cadena con formato 'X.X/5'
-                try:
-                    puntuacion_str = result['score']['puntuacion_total'].split('/')[0]
-                    puntuacion_global = float(puntuacion_str)
-                except (ValueError, IndexError):
-                    puntuacion_global = None
-        
-        # Si se proporcionó un group_id, guardamos los resultados en la base de datos
-        if group_id:
-            with transaction.atomic():
-                try:
-                    group = TranscriptionGroup.objects.select_for_update().get(id=group_id)
-                    
-                    # Guardamos los resultados de la validación
-                    group.validation_date = timezone.now()
-                    group.validation_status = 'success'
-                    group.validation_result = result
-                    
-                    # Guardamos la puntuación global si se pudo extraer
-                    if 'puntuacion_global' in locals() and puntuacion_global is not None:
-                        group.validation_score = puntuacion_global
-                    
-                    # Guardar el grupo actualizado
-                    group.save()
-                except TranscriptionGroup.DoesNotExist:
-                    print(f"No se encontró el grupo de transcripción con ID: {group_id}")
-                except Exception as db_error:
-                    print(f"Error al guardar los resultados de validación: {str(db_error)}")
-        
-        return {
-            'status': 'success',
-            'result': result
-        }
-        
-    except Exception as error:
-        # Si hay un error en la validación y tenemos un group_id, guardamos el error
-        if group_id:
-            try:
-                group = TranscriptionGroup.objects.get(id=group_id)
-                group.validation_date = timezone.now()
-                group.validation_status = 'error'
-                group.validation_result = {'error': str(error)}
-                group.save()
-            except:
-                pass
-                
-        return {
-            'status': 'error',
-            'error': str(error)
-        }
-
-@shared_task
-def retry_audio_process_task(audio_id):
-    try:
-        from api.diarizer import AudioDiarization
-        from pathlib import Path
-        from django.conf import settings
-
-        # 1. Marcar como en proceso y limpiar segmentos antiguos
-        with transaction.atomic():
-            audio = AudioTranscription.objects.select_for_update().get(id=audio_id)
-            audio.status = 'in_process'
-            # Limpiar segmentos anteriores
-            audio.segments.all().delete()
-            audio.save()
-            audio.transcription_group.update_status()
-
-        # 2. Reinvocar diarización (operación costosa, fuera de lock)
-        # audio.file.path es absoluto (/app/media/...)
-        diarizer = AudioDiarization()
-        diarized_segments = diarizer.invoke(audio.file.path)
-
-        # 3. Crear nuevos segmentos y lanzar transcripción
-        with transaction.atomic():
-            audio = AudioTranscription.objects.select_for_update().get(id=audio_id)
-            
-            for idx, seg in enumerate(diarized_segments, start=1):
-                # FILTRO DE RUIDO: Ignorar segmentos menores a 0.5 segundos
-                duration = seg['end_time'] - seg['start_time']
-                if duration < 0.5:
-                    logger.info(f"Skipping short segment duration={duration:.2f}s during retry")
-                    continue
-
-                abs_path = Path(seg['path'])
-                
-                # Intentar calcular ruta relativa a MEDIA_ROOT para guardar en BD
-                try:
-                    # relative_to lanza ValueError si no es subpath
-                    relative_path = abs_path.relative_to(settings.MEDIA_ROOT)
-                except ValueError:
-                    # Fallback robusto: si está en /app/media pero relative_to falla por symlinks o formato
-                    path_str = str(abs_path)
-                    media_root_str = str(settings.MEDIA_ROOT)
-                    if path_str.startswith(media_root_str):
-                        relative_path = path_str[len(media_root_str):].lstrip(os.sep)
-                    else:
-                        # Si es un path totalmente distinto, guardamos el nombre base y rezamos
-                        # O idealmente movemos el archivo a media.
-                        # Diarizer debería guardar en media.
-                        relative_path = abs_path.name
-
-                segment = SpeechSegment(
-                    audio=audio,
-                    speaker_type='',
-                    text=None,
-                    start_time=seg['start_time'],
-                    end_time=seg['end_time'],
-                    order=idx,
-                )
-                segment.segment_file.name = str(relative_path)
-                segment.save()
-            
-            # Reset status a pending para que process_audio_task lo tome
-            audio.status = 'pending'
-            audio.save()
-            
-            # Lanzar tarea de transcripción
-            task = process_audio_task.delay(audio.id)
-            audio.task_id = task.id
-            audio.save()
-
-    except Exception as e:
-        logger.error(f"Error en retry_audio_process_task para audio {audio_id}: {e}")
+        logger.error(f"Error processing audio task: {e}")
         try:
-            with transaction.atomic():
-                audio = AudioTranscription.objects.get(id=audio_id)
-                audio.status = 'failed'
-                audio.save()
-                audio.transcription_group.update_status()
+            audio = AudioFile.objects.get(id=audio_file_id)
+            audio.processing_error = str(e)
+            audio.save()
+            audio.session.status = 'error'
+            audio.session.save()
         except:
             pass
         raise e
+
 @shared_task(bind=True)
 def initialize_backend_models(self):
     """
@@ -364,12 +156,8 @@ def initialize_backend_models(self):
         else:
             logger.info("Updating state to PROGRESS: Whisper...")
             self.update_state(state='PROGRESS', meta={'message': 'Inicializando Whisper (Transcripción)...'})
-            import time
-            time.sleep(1) # Pequeña pausa para asegurar que el frontend pille el mensaje
-            # Usamos get_transcriber_instance() directamente para saltarnos el Proxy limitado
-            # y forzar la inicialización real de la clase TranscriptionAgent
+            time.sleep(1)
             real_instance = get_transcriber_instance()
-            # Acceder a .model aquí sí funcionará porque real_instance es el TranscriptionAgent real
             _ = real_instance.model 
             logger.info("Whisper loaded.")
 
@@ -377,41 +165,11 @@ def initialize_backend_models(self):
         logger.info("Updating state to PROGRESS: Pyannote...")
         self.update_state(state='PROGRESS', meta={'message': 'Inicializando Pyannote (Identificación de Hablantes)...'})
         time.sleep(1)
-        from api.diarizer import AudioDiarization
-        # Instanciar carga el pipeline si se hace en __init__
         _ = AudioDiarization()
         logger.info("Pyannote loaded.")
-
-        # 3. Ollama (Validación)
-        logger.info("Updating state to PROGRESS: Ollama...")
-        self.update_state(state='PROGRESS', meta={'message': 'Conectando con Ollama (Validación Legal)...'})
-        time.sleep(1)
-        try:
-            from ollama import Client
-            from django.conf import settings
-            # Construir URL base correctamente
-            ollama_url = getattr(settings, 'OLLAMA_BASE_URL', 'http://ollama:11434')
-            client = Client(host=ollama_url)
-            # Listar para verificar conexión y calentar
-            client.list()
-            logger.info("Ollama connected.")
-        except Exception as e_ollama:
-            logger.warning(f"Ollama warning (non-blocking): {e_ollama}")
 
         return {"status": "ready", "details": "Todos los motores inicializados."}
 
     except Exception as e:
         logger.error(f"Error initializing models: {e}")
         return {"status": "error", "details": str(e)}
-
-@shared_task
-def check_backend_status():
-    """
-    Tarea síncrona/rápida para comprobar si los singletons están en memoria.
-    Devuelve True si Whisper está cargado en el worker.
-    """
-    try:
-        from .transcriber.transcriber import is_model_loaded
-        return is_model_loaded()
-    except:
-        return False

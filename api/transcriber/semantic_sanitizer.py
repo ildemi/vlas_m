@@ -2,7 +2,10 @@
 import logging
 import json
 import os
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 from django.conf import settings
 
 logger = logging.getLogger(__name__)

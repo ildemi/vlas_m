@@ -1,3 +1,5 @@
+name: sa3i_vlasv2.1
+
 volumes:
   pyannote_models:
   hf_models:
@@ -5,14 +7,15 @@ volumes:
   pgdata:
   media:
 
+
 services:
   django:
     image: saerco/vlas-server:0.1.0
     build:
       context: ..
       dockerfile: docker/server/Dockerfile
-    entrypoint: ["/app/docker/entrypoint-django.sh"]
-    command: ["python", "manage.py", "runserver", "0.0.0.0:8002"]
+    entrypoint: [ "/bin/bash", "/app/docker/entrypoint-django.sh" ]
+    command: [ "python", "manage.py", "runserver", "0.0.0.0:8002" ]
     ports:
       - "8002:8002"
     volumes:
@@ -21,12 +24,13 @@ services:
       - pyannote_models:/app/.cache/pyannote
       - hf_models:/app/.cache/huggingface
       - ollama_db:/root/.ollama
-      #- ./entrypoint-django.sh:/app/docker/entrypoint-django.sh # Ya incluido en .:/app
+      #- ./entrypoint-django.sh:/app/docker/entrypoint-django.sh
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy
+        # Relaxed dependency for rabbitmq
+        condition: service_started
     environment:
       DEBUG: ${DEBUG}
       SECRET_KEY: ${SECRET_KEY}
@@ -58,7 +62,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
   postgres:
     image: postgres:15
@@ -70,7 +74,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -85,21 +89,24 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
+      test: [ "CMD", "rabbitmqctl", "status" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
   celery:
     image: saerco/vlas-server:0.1.0
-    entrypoint: ["/app/docker/entrypoint-celery.sh"]
+    build:
+      context: ..
+      dockerfile: docker/server/Dockerfile
+    entrypoint: [ "/bin/bash", "/app/docker/entrypoint-celery.sh" ]
     working_dir: /app
     command: celery -A transcriptionAPI worker -l info --pool=solo
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
     environment:
       DEBUG: ${DEBUG}
       SECRET_KEY: ${SECRET_KEY}
@@ -133,29 +140,31 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
   frontend:
-    image: saerco/vlas-client:0.1.0
-    build:
-      context: ..
-      dockerfile: docker/client/Dockerfile
-      args:
-        VITE_DJANGO_URL: ${VITE_DJANGO_URL}
+    image: node:20-alpine
+    working_dir: /app/web
+    # Mantenemos vivo el contenedor para ejecutar comandos dentro (scaffold, dev server)
+    command: tail -f /dev/null
     ports:
-      - "8080:80"
+      - "8080:5173"
+    volumes:
+      - ../:/app
+    environment:
+      - VITE_DJANGO_URL=${VITE_DJANGO_URL}
     restart: unless-stopped
 
   ollama:
     image: ollama/ollama:0.6.0
-    command: ["serve"]
+    command: [ "serve" ]
     volumes:
       - ollama_db:/root/.ollama
     environment:
       - OLLAMA_MODEL=${OLLAMA_MODEL}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "ollama", "--version"]
+      test: [ "CMD", "ollama", "--version" ]
       interval: 10s
       timeout: 10s
       retries: 100
@@ -166,29 +175,4 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
-
-
-  #ollama:
-  #  image: ollama/ollama:0.6.0
-  #  entrypoint: ["/app/docker/entrypoint-ollama.sh"]
-  #  command: ["ollama", "serve"]
-  #  volumes:
-  #    - ollama_db:/root/.ollama
-  #  environment:
-  #    - OLLAMA_MODEL=${OLLAMA_MODEL}
-  #  restart: unless-stopped
-  #  healthcheck:
-  #    test: "ollama --version && ollama ps || exit 1"
-  #    interval: 10s
-  #    timeout: 10s
-  #    retries: 100
-  #    start_period: 10s
-  #  deploy:
-  #    resources:
-  #      reservations:
-  #        devices:
-  #          - driver: nvidia
-  #            count: all
-  #            capabilities: [gpu]
-
+              capabilities: [ gpu ]
